@@ -90,4 +90,4 @@ jobs:
             exit 1
           fi
 
-          echo "Image size check passed
+          echo "Image size check passed"
