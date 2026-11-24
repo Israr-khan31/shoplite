@@ -1,0 +1,122 @@
+name: Deploy
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    name: Compute image tag
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Compute short SHA
+        id: tag
+        run: echo "tag=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+
+  push:
+    name: Push ${{ matrix.name }}
+    needs: prepare
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - name: frontend
+            dir: frontend
+          - name: catalog
+            dir: catalog-service
+          - name: inventory
+            dir: inventory-service
+          - name: orders
+            dir: order-service
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Log in to ECR
+        id: login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and push image
+        env:
+          REGISTRY: ${{ steps.login.outputs.registry }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          image="$REGISTRY/shoplite/${{ matrix.name }}:$TAG"
+          docker build --platform linux/amd64 -t "$image" "${{ matrix.dir }}"
+          docker push "$image"
+
+  deploy:
+    name: Deploy to VM
+    needs: [prepare, push]
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up SSH
+        env:
+          VM_HOST: ${{ secrets.VM_HOST }}
+          VM_SSH_KEY: ${{ secrets.VM_SSH_KEY }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$VM_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "$VM_HOST" >> ~/.ssh/known_hosts
+
+      - name: Copy deploy files to VM
+        env:
+          VM_HOST: ${{ secrets.VM_HOST }}
+          VM_USER: ${{ secrets.VM_USER }}
+        run: |
+          scp -i ~/.ssh/deploy_key scripts/deploy.sh "$VM_USER@$VM_HOST:/opt/shoplite/deploy.sh"
+          scp -i ~/.ssh/deploy_key db/init.sql "$VM_USER@$VM_HOST:/opt/shoplite/db/init.sql"
+
+      - name: Run deploy script on VM
+        env:
+          VM_HOST: ${{ secrets.VM_HOST }}
+          VM_USER: ${{ secrets.VM_USER }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          ssh -i ~/.ssh/deploy_key "$VM_USER@$VM_HOST" "chmod +x /opt/shoplite/deploy.sh && IMAGE_TAG=$TAG /opt/shoplite/deploy.sh"
+
+      - name: Smoke test
+        env:
+          APP_DOMAIN: ${{ vars.APP_DOMAIN }}
+        run: |
+          if [ -z "$APP_DOMAIN" ]; then
+            echo "APP_DOMAIN variable is not set" >&2
+            exit 1
+          fi
+          for i in $(seq 1 12); do
+            if curl -fsS --max-time 5 "http://$APP_DOMAIN/api/catalog/health"; then
+              echo
+              echo "Smoke test passed"
+              exit 0
+            fi
+            sleep 5
+          done
+          echo "Smoke test failed: no healthy answer from $APP_DOMAIN" >&2
+          exit 1
