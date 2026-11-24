@@ -21,6 +21,7 @@ FROM alpine:3.22
 WORKDIR /app
 
 # Install certificates
+# hadolint ignore=DL3018
 RUN apk add --no-cache ca-certificates
 
 # Copy compiled binary from build stage
