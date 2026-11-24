@@ -1,0 +1,93 @@
+name: ShopLite CI
+
+on:
+  pull_request:
+    branches:
+      - main
+
+  push:
+    branches:
+      - main
+
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  hadolint:
+    name: Dockerfile Lint - ${{ matrix.name }}
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: frontend
+            dockerfile: frontend/Dockerfile
+
+          - name: catalog
+            dockerfile: catalog-service/Dockerfile
+
+          - name: inventory
+            dockerfile: inventory-service/Dockerfile
+
+          - name: orders
+            dockerfile: order-service/Dockerfile
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run Hadolint
+        uses: hadolint/hadolint-action@v3.1.0
+        with:
+          dockerfile: ${{ matrix.dockerfile }}
+
+  build:
+    name: Build image - ${{ matrix.name }}
+    runs-on: ubuntu-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: frontend
+            dir: frontend
+            limit_mb: 60
+
+          - name: catalog
+            dir: catalog-service
+            limit_mb: 200
+
+          - name: inventory
+            dir: inventory-service
+            limit_mb: 30
+
+          - name: orders
+            dir: order-service
+            limit_mb: 300
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: |
+          docker build -t shop-${{ matrix.name }}:ci ${{ matrix.dir }}
+
+      - name: Check image size
+        run: |
+          bytes=$(docker image inspect shop-${{ matrix.name }}:ci --format '{{.Size}}')
+          mb=$((bytes / 1000000))
+
+          echo "Image: shop-${{ matrix.name }}"
+          echo "Size: ${mb} MB"
+          echo "Limit: ${{ matrix.limit_mb }} MB"
+
+          if [ "$mb" -gt "${{ matrix.limit_mb }}" ]; then
+            echo "ERROR: Image exceeds its size budget"
+            exit 1
+          fi
+
+          echo "Image size check passed"
