@@ -65,7 +65,16 @@ jobs:
         run: |
           image="$REGISTRY/shoplite/${{ matrix.name }}:$TAG"
           docker build --platform linux/amd64 -t "$image" "${{ matrix.dir }}"
-          docker push "$image"
+          if out="$(docker push "$image" 2>&1)"; then
+            echo "$out"
+          else
+            echo "$out"
+            if echo "$out" | grep -q "already exists"; then
+              echo "Tag $TAG is already in ECR, continuing"
+            else
+              exit 1
+            fi
+          fi
 
   deploy:
     name: Deploy to VM
