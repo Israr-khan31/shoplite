@@ -1,6 +1,6 @@
 FROM node:22-alpine
 # hadolint ignore=DL3017
-RUN apk upgrade --no-cache zlib
+RUN apk upgrade --no-cache zlib libcrypto3 libssl3
 WORKDIR /app
 COPY package*.json ./
 RUN npm ci --omit=dev && npm cache clean --force
