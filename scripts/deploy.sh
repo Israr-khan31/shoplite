@@ -28,6 +28,13 @@ CATALOG_IMAGE="$REGISTRY/shoplite/catalog:$IMAGE_TAG"
 INVENTORY_IMAGE="$REGISTRY/shoplite/inventory:$IMAGE_TAG"
 ORDERS_IMAGE="$REGISTRY/shoplite/orders:$IMAGE_TAG"
 
+# Public name of the site (nginx answers only for this Host header).
+SERVER_NAME="$(grep -E '^SERVER_NAME=' .env | head -n 1 | cut -d= -f2-)"
+if [ -z "$SERVER_NAME" ]; then
+  echo "SERVER_NAME is missing in .env" >&2
+  exit 1
+fi
+
 echo "Deploying tag $IMAGE_TAG from $REGISTRY"
 aws ecr get-login-password --region "$REGION" | docker login --username AWS --password-stdin "$REGISTRY"
 
@@ -114,13 +121,12 @@ docker rm -f frontend >/dev/null 2>&1 || true
 docker create --name frontend --restart unless-stopped \
   --network frontend-net \
   -p 80:80 \
-  --env-file .env \
+  -e "SERVER_NAME=$SERVER_NAME" \
   "$FRONTEND_IMAGE" >/dev/null
 docker network connect backend-net frontend
 docker start frontend >/dev/null
 
 # Final check through nginx, up to 60 seconds.
-SERVER_NAME="$(grep -E '^SERVER_NAME=' .env | head -n 1 | cut -d= -f2-)"
 echo "==> Checking /api/catalog/health through nginx (Host: $SERVER_NAME)"
 for _ in $(seq 1 30); do
   if curl -fsS --max-time 3 -H "Host: $SERVER_NAME" http://127.0.0.1/api/catalog/health >/dev/null 2>&1; then
