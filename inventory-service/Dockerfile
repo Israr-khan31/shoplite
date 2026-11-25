@@ -10,7 +10,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o inventory-service .
 FROM alpine:3.22
 WORKDIR /app
 # hadolint ignore=DL3017,DL3018
-RUN apk add --no-cache ca-certificates && apk upgrade --no-cache zlib && adduser -D -u 10001 app
+RUN apk add --no-cache ca-certificates && apk upgrade --no-cache zlib libcrypto3 libssl3 && adduser -D -u 10001 app
 COPY --from=build /app/inventory-service .
 USER app
 EXPOSE 8081
