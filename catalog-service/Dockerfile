@@ -1,21 +1,11 @@
-
-# Stage 1: Use Node.js
 FROM node:22-alpine
-
-# Create working directory
+# hadolint ignore=DL3017
+RUN apk upgrade --no-cache zlib
 WORKDIR /app
-
-# Copy dependency files
 COPY package*.json ./
-
-# Install production dependencies
-RUN npm ci --omit=dev
-
-# Copy application code
+RUN npm ci --omit=dev && npm cache clean --force
 COPY src/ ./src/
-
-# Application port
+USER node
 EXPOSE 3000
-
-# Start catalog service
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 CMD wget -q -O /dev/null http://127.0.0.1:3000/health || exit 1
 CMD ["npm", "start"]

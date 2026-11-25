@@ -1,33 +1,17 @@
-
 # Stage 1: Build React application
 FROM node:22-alpine AS build
-
-# Set working directory
 WORKDIR /app
-
-# Copy dependency files
 COPY package*.json ./
-
-# Install dependencies
 RUN npm ci
-
-# Copy application source code
 COPY . .
-
-# Build production files
 RUN npm run build
 
 # Stage 2: Serve using Nginx
-FROM nginx:alpine
-
-# Copy production files from build stage
+FROM nginx:1.31-alpine-slim
+# hadolint ignore=DL3017
+RUN apk upgrade --no-cache zlib
 COPY --from=build /app/dist /usr/share/nginx/html
-
-# Copy custom Nginx configuration
 COPY nginx.conf /etc/nginx/templates/default.conf.template
-
-# Expose web port
 EXPOSE 80
-
-# Start Nginx
+HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 CMD wget -q -O /dev/null --header "Host: ${SERVER_NAME}" http://127.0.0.1/ || exit 1
 CMD ["nginx", "-g", "daemon off;"]
