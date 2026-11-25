@@ -25,7 +25,7 @@ for entry in "${SERVICES[@]}"; do
   dir="${entry##*:}"
   image="$REGISTRY/shoplite/$name:$TAG"
   echo "==> Building $image"
-  docker build --platform linux/amd64 -t "$image" "$dir"
+  docker build --provenance=false --sbom=false --platform linux/amd64 -t "$image" "$dir"
   echo "==> Pushing $image"
   docker push "$image"
 done
