@@ -14,7 +14,7 @@ Date: 2026-11-25. Live site: http://shoplite-robin.duckdns.org (VM Elastic IP 3.
 - Four private ECR repositories: `shoplite/frontend`, `shoplite/catalog`, `shoplite/inventory`, `shoplite/orders`. Tags are immutable, scan on push is on, lifecycle policy keeps the last 10 images.
 - Images are tagged with the 7-character git commit SHA (latest deployed: `7f9b39a`). `latest` is never deployed: `deploy.sh` refuses it.
 - GitHub Actions logs in to AWS with OIDC (role `shoplite-github-actions`, trusted only for this repository on `main`, allowed to push only to the four repositories). The VM pulls with its instance role `shoplite-ec2-role` (pull only). No AWS access keys are stored anywhere.
-- ECR scan findings: not yet checked at the time of writing (the scan status was empty when queried).
+- ECR scan findings: see the table in the section below.
 
 ## Pipelines
 
@@ -44,3 +44,16 @@ Only ports 22 and 80 listen publicly (`sudo ss -tlnp`; the 127.0.0.53 and 127.0.
 ## Rollback
 
 `IMAGE_TAG=<older-sha> /opt/shoplite/deploy.sh` on the VM redeploys any tag that is still in ECR. It pulls all four images first, so a wrong tag fails before anything is stopped. This was run by hand with tag `7f9b39a` and ended with `Healthy. Tag 7f9b39a is live.`
+
+## ECR image scan results
+
+Scan on push is enabled. The first scan (tag fb533ac) found one CRITICAL CVE, CVE-2026-4738 in the Alpine package zlib 1.3.2-r1. It was fixed by adding "apk upgrade --no-cache zlib" to the runtime stage of the Dockerfiles (tag 4e54539). The remaining HIGH and MEDIUM findings in catalog and inventory were all openssl 3.5.9-r0 and were fixed by upgrading libcrypto3 and libssl3 (tag 5ba2160).
+
+| Image | fb533ac (first scan) | 4e54539 (zlib fix) | 5ba2160 (openssl fix, live) |
+|---|---|---|---|
+| frontend | 1 CRITICAL | 0 | 0 |
+| catalog | 1 CRITICAL, 4 HIGH, 1 MEDIUM | 4 HIGH, 1 MEDIUM | 0 |
+| inventory | 1 CRITICAL, 4 HIGH, 1 MEDIUM | 4 HIGH, 1 MEDIUM | 0 |
+| orders | 1 HIGH | 0 | 0 |
+
+Live tag at the time of writing: 5ba2160. All four scans COMPLETE with no findings.
